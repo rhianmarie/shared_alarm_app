@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "509744273533",
+    "project_id": "remind-me-8b3da",
+    "storage_bucket": "remind-me-8b3da.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:509744273533:android:f00784478d918802b23914",
+        "android_client_info": {
+          "package_name": "com.example.shared_alarm_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDFrwQoam1worJPf102FAsj_sI6BGR5u6w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
