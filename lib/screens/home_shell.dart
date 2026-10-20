@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import 'placeholder_screen.dart';
+import 'add_reminder_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -24,14 +25,8 @@ class _HomeShellState extends State<HomeShell> {
   ];
 
   void _openAddReminder() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(title: const Text('Add reminder')),
-          body: const PlaceholderScreen(title: 'Add reminder'),
-        ),
-      ),
-    );
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const AddReminderScreen()));
   }
 
   @override

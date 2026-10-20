@@ -1,25 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../models/reminder.dart';
+import '../providers/reminder_provider.dart';
 import '../theme/app_theme.dart';
-
-// Fake data for now. We'll replace it with real data later.
-const _tonight = [
-  Reminder(
-    time: '10:00 PM',
-    title: 'Review Flutter Layout',
-    sharedWith: 'Jared',
-  ),
-  Reminder(
-    time: '11:30 PM',
-    title: 'Post IG Carousel',
-    sharedWith: 'Ate Jovis',
-  ),
-];
-
-const _tomorrow = [
-  Reminder(time: '6:00 AM', title: 'NSTP Class Prep', sharedWith: 'Scott'),
-];
+import '../utils/format.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -163,32 +148,49 @@ class _PersonChip extends StatelessWidget {
 
 // ---------- Main feed ----------
 
+String _groupLabel(DateTime d) {
+  final day = relativeDay(d);
+  if (day == 'Today') return 'LATER TODAY';
+  final date = '${weekdayShort(d)}, ${formatShortDate(d)}'.toUpperCase();
+  return day == 'Tomorrow' ? 'TOMORROW · $date' : date;
+}
+
 class _Feed extends StatelessWidget {
   const _Feed();
 
   @override
   Widget build(BuildContext context) {
+    final upcoming = context.watch<ReminderProvider>().upcoming;
+    final next = upcoming.isEmpty ? null : upcoming.first;
+    final rest = upcoming.length > 1 ? upcoming.sublist(1) : <Reminder>[];
+
+    // Group the remaining reminders by day, keeping the order.
+    final groups = <String, List<Reminder>>{};
+    for (final r in rest) {
+      groups.putIfAbsent(_groupLabel(r.dateTime), () => []).add(r);
+    }
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(4, 16, 16, 24),
       children: [
-        const _SectionLabel('NEXT TASK', trailing: 'Today · Thu, Oct 15'),
+        _SectionLabel(
+          'NEXT TASK',
+          trailing: next == null
+              ? null
+              : '${relativeDay(next.dateTime)} · ${weekdayShort(next.dateTime)}, ${formatShortDate(next.dateTime)}',
+        ),
         const SizedBox(height: 8),
-        const _NextTaskCard(),
+        if (next == null) const _EmptyCard() else _NextTaskCard(reminder: next),
         const SizedBox(height: 12),
         const _QuoteBox(),
-        const SizedBox(height: 20),
-        const _SectionLabel('UPCOMING · TONIGHT'),
-        const SizedBox(height: 8),
-        for (final r in _tonight) ...[
-          _ReminderTile(reminder: r),
+        for (final entry in groups.entries) ...[
+          const SizedBox(height: 20),
+          _SectionLabel(entry.key),
           const SizedBox(height: 8),
-        ],
-        const SizedBox(height: 12),
-        const _SectionLabel('TOMORROW · FRI, OCT 16'),
-        const SizedBox(height: 8),
-        for (final r in _tomorrow) ...[
-          _ReminderTile(reminder: r),
-          const SizedBox(height: 8),
+          for (final r in entry.value) ...[
+            _ReminderTile(reminder: r),
+            const SizedBox(height: 8),
+          ],
         ],
       ],
     );
@@ -226,12 +228,46 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _NextTaskCard extends StatelessWidget {
-  const _NextTaskCard();
+class _EmptyCard extends StatelessWidget {
+  const _EmptyCard();
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          Text('Nothing coming up', style: AppTheme.heading(size: 17)),
+          const SizedBox(height: 6),
+          const Text(
+            'Tap the + button to add a reminder.',
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NextTaskCard extends StatelessWidget {
+  final Reminder reminder;
+
+  const _NextTaskCard({required this.reminder});
+
+  @override
+  Widget build(BuildContext context) {
+    final who = reminder.sharedWith.isEmpty
+        ? 'JUST FOR YOU'
+        : 'SHARED WITH ${reminder.sharedWith.join(', ').toUpperCase()}';
+
+    return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -241,44 +277,56 @@ class _NextTaskCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'SHARED WITH SCOTT',
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.6,
-                  color: AppColors.textMuted,
+              Flexible(
+                child: Text(
+                  who,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.6,
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ),
-              Icon(Icons.north_east, size: 14, color: AppColors.textMuted),
+              const Icon(
+                Icons.north_east,
+                size: 14,
+                color: AppColors.textMuted,
+              ),
             ],
           ),
           const SizedBox(height: 6),
           Text.rich(
             TextSpan(
               children: [
-                TextSpan(text: '9:30', style: AppTheme.heading(size: 34)),
                 TextSpan(
-                  text: ' PM',
+                  text: formatClock(reminder.dateTime),
+                  style: AppTheme.heading(size: 34),
+                ),
+                TextSpan(
+                  text: ' ${formatPeriod(reminder.dateTime)}',
                   style: AppTheme.heading(size: 14, color: AppColors.textMuted),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 2),
-          Text('Task 1 — Submit Report', style: AppTheme.heading(size: 17)),
-          const SizedBox(height: 6),
-          const Text(
-            'Finalize and submit the midterm project report to the class portal before deadline.',
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.4,
-              color: AppColors.textBody,
+          Text(reminder.title, style: AppTheme.heading(size: 17)),
+          if (reminder.notes.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              reminder.notes,
+              style: const TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: AppColors.textBody,
+              ),
             ),
-          ),
+          ],
           const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -286,14 +334,21 @@ class _NextTaskCard extends StatelessWidget {
               color: AppColors.surfaceSoft,
               borderRadius: BorderRadius.circular(20),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.access_time, size: 13, color: AppColors.textBody),
-                SizedBox(width: 5),
+                const Icon(
+                  Icons.access_time,
+                  size: 13,
+                  color: AppColors.textBody,
+                ),
+                const SizedBox(width: 5),
                 Text(
-                  '26 min remaining',
-                  style: TextStyle(fontSize: 10, color: AppColors.textBody),
+                  remainingText(reminder.dateTime),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textBody,
+                  ),
                 ),
               ],
             ),
@@ -344,6 +399,10 @@ class _ReminderTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final subtitle = reminder.sharedWith.isEmpty
+        ? 'Just you'
+        : 'Shared with ${reminder.sharedWith.join(', ')}';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -354,9 +413,9 @@ class _ReminderTile extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 52,
+            width: 56,
             child: Text(
-              reminder.time,
+              formatTime(reminder.dateTime),
               style: const TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
@@ -371,7 +430,7 @@ class _ReminderTile extends StatelessWidget {
                 Text(reminder.title, style: AppTheme.heading(size: 13)),
                 const SizedBox(height: 2),
                 Text(
-                  'Shared with ${reminder.sharedWith}',
+                  subtitle,
                   style: const TextStyle(
                     fontSize: 10,
                     color: AppColors.textMuted,
@@ -380,12 +439,16 @@ class _ReminderTile extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            width: 20,
-            height: 20,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.textMuted),
+          GestureDetector(
+            onTap: () =>
+                context.read<ReminderProvider>().toggleDone(reminder.id),
+            child: Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.textMuted),
+              ),
             ),
           ),
         ],
