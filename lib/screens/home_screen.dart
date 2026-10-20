@@ -72,6 +72,8 @@ class _Header extends StatelessWidget {
 }
 
 // ---------- Left rail of people ----------
+// TODO: placeholder. Replace with the linked account (UserProvider) once
+// account linking is built (Sprint 4).
 
 class _PeopleRail extends StatelessWidget {
   const _PeopleRail();
@@ -155,19 +157,41 @@ String _groupLabel(DateTime d) {
   return day == 'Tomorrow' ? 'TOMORROW · $date' : date;
 }
 
+/// Who a reminder involves. Names come later, once users have display names.
+String _whoLabel(Reminder r) =>
+    r.createdBy == r.assignedTo ? 'Just you' : 'Shared reminder';
+
 class _Feed extends StatelessWidget {
   const _Feed();
 
   @override
   Widget build(BuildContext context) {
-    final upcoming = context.watch<ReminderProvider>().upcoming;
+    final provider = context.watch<ReminderProvider>();
+
+    if (provider.loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (provider.error != null) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Couldn’t load your reminders. Try again in a moment.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+          ),
+        ),
+      );
+    }
+
+    final upcoming = provider.upcoming;
     final next = upcoming.isEmpty ? null : upcoming.first;
     final rest = upcoming.length > 1 ? upcoming.sublist(1) : <Reminder>[];
 
     // Group the remaining reminders by day, keeping the order.
     final groups = <String, List<Reminder>>{};
     for (final r in rest) {
-      groups.putIfAbsent(_groupLabel(r.dateTime), () => []).add(r);
+      groups.putIfAbsent(_groupLabel(r.scheduledTime), () => []).add(r);
     }
 
     return ListView(
@@ -177,7 +201,7 @@ class _Feed extends StatelessWidget {
           'NEXT TASK',
           trailing: next == null
               ? null
-              : '${relativeDay(next.dateTime)} · ${weekdayShort(next.dateTime)}, ${formatShortDate(next.dateTime)}',
+              : '${relativeDay(next.scheduledTime)} · ${weekdayShort(next.scheduledTime)}, ${formatShortDate(next.scheduledTime)}',
         ),
         const SizedBox(height: 8),
         if (next == null) const _EmptyCard() else _NextTaskCard(reminder: next),
@@ -262,9 +286,7 @@ class _NextTaskCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final who = reminder.sharedWith.isEmpty
-        ? 'JUST FOR YOU'
-        : 'SHARED WITH ${reminder.sharedWith.join(', ').toUpperCase()}';
+    final who = _whoLabel(reminder).toUpperCase();
 
     return Container(
       width: double.infinity,
@@ -304,11 +326,11 @@ class _NextTaskCard extends StatelessWidget {
             TextSpan(
               children: [
                 TextSpan(
-                  text: formatClock(reminder.dateTime),
+                  text: formatClock(reminder.scheduledTime),
                   style: AppTheme.heading(size: 34),
                 ),
                 TextSpan(
-                  text: ' ${formatPeriod(reminder.dateTime)}',
+                  text: ' ${formatPeriod(reminder.scheduledTime)}',
                   style: AppTheme.heading(size: 14, color: AppColors.textMuted),
                 ),
               ],
@@ -316,10 +338,10 @@ class _NextTaskCard extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(reminder.title, style: AppTheme.heading(size: 17)),
-          if (reminder.notes.isNotEmpty) ...[
+          if (reminder.description.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(
-              reminder.notes,
+              reminder.description,
               style: const TextStyle(
                 fontSize: 12,
                 height: 1.4,
@@ -344,7 +366,7 @@ class _NextTaskCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 5),
                 Text(
-                  remainingText(reminder.dateTime),
+                  remainingText(reminder.scheduledTime),
                   style: const TextStyle(
                     fontSize: 10,
                     color: AppColors.textBody,
@@ -382,6 +404,7 @@ class _QuoteBox extends StatelessWidget {
             ).copyWith(fontStyle: FontStyle.italic),
           ),
           const SizedBox(height: 4),
+          // TODO: use the signed-in user's display name instead of "Marie".
           const Text(
             '— keep going, Marie ♡',
             style: TextStyle(fontSize: 10, color: AppColors.textMuted),
@@ -399,10 +422,6 @@ class _ReminderTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final subtitle = reminder.sharedWith.isEmpty
-        ? 'Just you'
-        : 'Shared with ${reminder.sharedWith.join(', ')}';
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -415,7 +434,7 @@ class _ReminderTile extends StatelessWidget {
           SizedBox(
             width: 56,
             child: Text(
-              formatTime(reminder.dateTime),
+              formatTime(reminder.scheduledTime),
               style: const TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
@@ -430,7 +449,7 @@ class _ReminderTile extends StatelessWidget {
                 Text(reminder.title, style: AppTheme.heading(size: 13)),
                 const SizedBox(height: 2),
                 Text(
-                  subtitle,
+                  _whoLabel(reminder),
                   style: const TextStyle(
                     fontSize: 10,
                     color: AppColors.textMuted,

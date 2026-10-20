@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/reminder.dart';
+import '../models/repeat_rule.dart';
 import '../providers/reminder_provider.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -14,22 +15,15 @@ class AddReminderScreen extends StatefulWidget {
 }
 
 class _AddReminderScreenState extends State<AddReminderScreen> {
-  static const _people = ['Scott', 'Jared', 'Ate Jovis'];
-  static const _repeatOptions = [
-    'Does not repeat',
-    'Every day',
-    'Weekdays',
-    'Every week',
-  ];
   static const _remindOptions = [0, 5, 10, 15, 30, 60];
 
   final _titleCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+  final _ttsCtrl = TextEditingController();
   late DateTime _date;
   late TimeOfDay _time;
-  String _repeat = 'Does not repeat';
-  int _remindBefore = 10;
-  final Set<String> _shared = {};
+  RepeatRule _repeat = RepeatRule.none;
+  int _remindBefore = 5; // matches schema default (preNotifyMinutes)
 
   @override
   void initState() {
@@ -43,11 +37,12 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
   void dispose() {
     _titleCtrl.dispose();
     _notesCtrl.dispose();
+    _ttsCtrl.dispose();
     super.dispose();
   }
 
   String _remindLabel(int minutes) {
-    if (minutes == 0) return 'At time of reminder';
+    if (minutes == 0) return 'No heads-up';
     if (minutes == 60) return '1 hour before';
     return '$minutes min before';
   }
@@ -102,10 +97,10 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
   }
 
   Future<void> _pickRepeat() async {
-    final picked = await _pickOption<String>(
+    final picked = await _pickOption<RepeatRule>(
       'Repeat',
-      _repeatOptions,
-      (s) => s,
+      RepeatRule.values,
+      (r) => r.label,
     );
     if (picked != null && mounted) setState(() => _repeat = picked);
   }
@@ -135,16 +130,33 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
       _time.hour,
       _time.minute,
     );
+    if (!when.isAfter(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pick a time in the future.')),
+      );
+      return;
+    }
 
-    context.read<ReminderProvider>().add(
+    const userId = 'local-user'; // TODO: signed-in user's uid (Auth)
+    final now = DateTime.now();
+    final voice = _ttsCtrl.text.trim();
+    final provider = context.read<ReminderProvider>();
+
+    // Intentionally not awaited: with Firestore, the write future doesn't
+    // complete offline, and the snapshot listener updates the UI instantly.
+    provider.add(
       Reminder(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        id: provider.newId(),
         title: title,
-        notes: _notesCtrl.text.trim(),
-        dateTime: when,
-        repeat: _repeat,
-        remindMinutesBefore: _remindBefore,
-        sharedWith: _shared.toList(),
+        description: _notesCtrl.text.trim(),
+        ttsText: voice.isEmpty ? title : voice,
+        scheduledTime: when,
+        preNotifyMinutes: _remindBefore,
+        repeat: _repeat.value,
+        createdBy: userId,
+        assignedTo: userId, // TODO: linkedAccountId once accounts are linked
+        createdAt: now,
+        updatedAt: now,
       ),
     );
 
@@ -243,6 +255,24 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
                       textCapitalization: TextCapitalization.sentences,
                       decoration: _decoration('Anything you want to remember'),
                     ),
+                    _label('VOICE MESSAGE'),
+                    TextField(
+                      controller: _ttsCtrl,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: _decoration(
+                        'What the alarm says out loud (optional)',
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: Text(
+                        'Leave blank to read the title.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ),
                     _label('DATE & TIME'),
                     Row(
                       children: [
@@ -278,7 +308,7 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
                           _OptionRow(
                             icon: Icons.repeat,
                             label: 'Repeat',
-                            value: _repeat,
+                            value: _repeat.label,
                             onTap: _pickRepeat,
                           ),
                           const Divider(height: 1, color: AppColors.border),
@@ -291,26 +321,11 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
                         ],
                       ),
                     ),
-                    _label('SHARE WITH'),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final p in _people)
-                          _PersonChoice(
-                            name: p,
-                            selected: _shared.contains(p),
-                            onTap: () => setState(() {
-                              if (!_shared.add(p)) _shared.remove(p);
-                            }),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
+                    _label('ASSIGNED TO'),
                     const Text(
-                      'People you pick can view and complete this reminder. Only you can edit or delete it.',
+                      'Your linked partner. Link accounts in Settings.',
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 12,
                         color: AppColors.textMuted,
                       ),
                     ),
@@ -434,71 +449,6 @@ class _OptionRow extends StatelessWidget {
               size: 18,
               color: AppColors.textMuted,
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PersonChoice extends StatelessWidget {
-  final String name;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _PersonChoice({
-    required this.name,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.surfaceSoft : AppColors.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: selected ? AppColors.primary : AppColors.border,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 24,
-              height: 24,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: AppColors.surfaceSoft,
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                name[0],
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textBody,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              name,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.brown800,
-              ),
-            ),
-            if (selected) ...[
-              const SizedBox(width: 6),
-              const Icon(Icons.check, size: 16, color: AppColors.primary),
-            ],
           ],
         ),
       ),

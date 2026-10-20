@@ -1,56 +1,89 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/reminder.dart';
+import '../repositories/reminder_repository.dart';
 
 class ReminderProvider extends ChangeNotifier {
-  final List<Reminder> _items = [];
+  ReminderProvider(this._repo);
 
-  ReminderProvider() {
-    _seed();
+  final ReminderRepository _repo;
+  StreamSubscription<List<Reminder>>? _sub;
+
+  List<Reminder> _items = [];
+  bool _loading = true;
+  Object? _error;
+
+  bool get loading => _loading;
+  Object? get error => _error;
+
+  /// Start listening for this user's reminders.
+  /// Call again (e.g. after login) to switch users.
+  void listen(String userId) {
+    _sub?.cancel();
+    _loading = true;
+    _sub = _repo
+        .watch(userId)
+        .listen(
+          (list) {
+            _items = list;
+            _loading = false;
+            _error = null;
+            notifyListeners();
+          },
+          onError: (Object e) {
+            _error = e;
+            _loading = false;
+            notifyListeners();
+          },
+        );
   }
 
-  /// Not-done reminders, soonest first.
+  /// Active or snoozed reminders, soonest first.
   List<Reminder> get upcoming {
-    final list = _items.where((r) => !r.done).toList()
-      ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+    final list =
+        _items
+            .where((r) => r.status == 'active' || r.status == 'snoozed')
+            .toList()
+          ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
     return list;
   }
 
-  void add(Reminder reminder) {
-    _items.add(reminder);
-    notifyListeners();
+  /// Reminders that are done, newest first.
+  List<Reminder> get completed {
+    final list = _items.where((r) => r.status == 'completed').toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return list;
   }
 
-  void toggleDone(String id) {
+  String newId() => _repo.newId();
+
+  /// Not awaited by the UI: with Firestore the local write is instant and the
+  /// snapshot listener updates the list, even when offline.
+  Future<void> add(Reminder reminder) => _repo.save(reminder);
+
+  Future<void> setStatus(String id, String status) async {
     final i = _items.indexWhere((r) => r.id == id);
     if (i == -1) return;
-    _items[i] = _items[i].copyWith(done: !_items[i].done);
-    notifyListeners();
+    await _repo.save(
+      _items[i].copyWith(status: status, updatedAt: DateTime.now()),
+    );
   }
 
-  // Sample data so Home isn't empty. Delete this once saving to storage works.
-  void _seed() {
-    final now = DateTime.now();
-    _items.addAll([
-      Reminder(
-        id: 's1',
-        title: 'Task 1 — Submit Report',
-        notes: 'Finalize and submit the midterm project report to the class portal before deadline.',
-        dateTime: now.add(const Duration(minutes: 26)),
-        sharedWith: const ['Scott'],
-      ),
-      Reminder(
-        id: 's2',
-        title: 'Review Flutter Layout',
-        dateTime: now.add(const Duration(hours: 2)),
-        sharedWith: const ['Jared'],
-      ),
-      Reminder(
-        id: 's3',
-        title: 'NSTP Class Prep',
-        dateTime: DateTime(now.year, now.month, now.day + 1, 6, 0),
-        sharedWith: const ['Scott'],
-      ),
-    ]);
+  /// Checkbox on Home: active <-> completed.
+  Future<void> toggleDone(String id) async {
+    final i = _items.indexWhere((r) => r.id == id);
+    if (i == -1) return;
+    final next = _items[i].status == 'completed' ? 'active' : 'completed';
+    await setStatus(id, next);
+  }
+
+  Future<void> remove(String id) => _repo.delete(id);
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
   }
 }

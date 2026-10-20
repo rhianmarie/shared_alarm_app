@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'repositories/reminder_repository.dart';
 import 'providers/reminder_provider.dart';
 import 'screens/home_shell.dart';
 import 'theme/app_theme.dart';
@@ -8,7 +9,9 @@ import 'theme/app_theme.dart';
 void main() {
   runApp(
     ChangeNotifierProvider(
-      create: (_) => ReminderProvider(),
+      create: (_) =>
+          ReminderProvider(InMemoryReminderRepository.seeded())
+            ..listen('local-user'),
       child: const MyApp(),
     ),
   );
